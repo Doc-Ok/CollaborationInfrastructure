@@ -1,0 +1,72 @@
+########################################################################
+# Packages.Collaboration - List of Collaboration sub-packages that can
+# be included/linked into projects.
+# Copyright (c) 2011-2020 Oliver Kreylos
+#
+# This file is part of the WhyTools Build Environment.
+# 
+# The WhyTools Build Environment is free software; you can redistribute
+# it and/or modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2 of the
+# License, or (at your option) any later version.
+# 
+# The WhyTools Build Environment is distributed in the hope that it will
+# be useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+# of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with the WhyTools Build Environment; if not, write to the Free
+# Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+# 02111-1307 USA
+########################################################################
+
+#
+# Additional system packages
+#
+
+# The PulseAudio client library
+PULSEAUDIO_BASEDIR = $(shell $(VRUI_MAKEDIR)/FindLibrary.sh pulse/pulseaudio.h libpulse.$(DSOFILEEXT) $(INCLUDEEXT) $(LIBEXT) $(SYSTEM_PACKAGE_SEARCH_PATHS))
+PULSEAUDIO_DEPENDS = 
+PULSEAUDIO_INCLUDE = -I$(PULSEAUDIO_BASEDIR)/$(INCLUDEEXT)
+PULSEAUDIO_LIBDIR  = -L$(PULSEAUDIO_BASEDIR)/$(LIBEXT) 
+PULSEAUDIO_LIBS    = -lpulse -lpulse-simple
+
+# The OPUS general audio encoding/decoding library
+OPUS_BASEDIR = $(shell $(VRUI_MAKEDIR)/FindLibrary.sh opus/opus.h libopus.$(DSOFILEEXT) $(INCLUDEEXT) $(LIBEXT) $(SYSTEM_PACKAGE_SEARCH_PATHS))
+OPUS_DEPENDS = -I$(OPUS_BASEDIR)/$(INCLUDEEXT)
+OPUS_INCLUDE = -L$(OPUS_BASEDIR)/$(LIBEXT)
+OPUS_LIBDIR  = 
+OPUS_LIBS    = -lopus
+
+ifneq ($(strip $(PULSEAUDIO_BASEDIR)),)
+  SYSTEM_HAVE_PULSEAUDIO = 1
+else
+  SYSTEM_HAVE_PULSEAUDIO = 0
+endif
+
+ifneq ($(strip $(OPUS_BASEDIR)),)
+  SYSTEM_HAVE_OPUS = 1
+else
+  SYSTEM_HAVE_OPUS = 0
+endif
+
+#
+# The second-generation collaboration infrastructure
+#
+
+# Server-side library
+MYCOLLABORATION2SERVER_BASEDIR = $(VRUI_PACKAGEROOT)
+MYCOLLABORATION2SERVER_DEPENDS = MYCOMM MYPLUGINS MYIO MYTHREADS MYREALTIME MYMISC OPENSSL
+MYCOLLABORATION2SERVER_INCLUDE = -I$(VRUI_INCLUDEDIR)
+MYCOLLABORATION2SERVER_LIBDIR  = -L$(VRUI_LIBDIR)
+MYCOLLABORATION2SERVER_LIBS    = -lCollaboration2Server.$(LDEXT)
+MYCOLLABORATION2SERVER_RPATH   = $(VRUI_LIBDIR)
+
+# Client-side library
+MYCOLLABORATION2CLIENT_BASEDIR = $(VRUI_PACKAGEROOT)
+MYCOLLABORATION2CLIENT_DEPENDS = MYVRUI MYCOMM MYPLUGINS MYIO MYTHREADS MYREALTIME MYMISC OPENSSL
+MYCOLLABORATION2CLIENT_INCLUDE = -I$(VRUI_INCLUDEDIR)
+MYCOLLABORATION2CLIENT_LIBDIR  = -L$(VRUI_LIBDIR)
+MYCOLLABORATION2CLIENT_LIBS    = -lCollaboration2Client.$(LDEXT)
+MYCOLLABORATION2CLIENT_RPATH   = $(VRUI_LIBDIR)

@@ -1,0 +1,98 @@
+Vrui collaboration infrastructure change history
+================================================
+
+CollaborationInfrastructure-1.0:
+- Beginning of history file
+
+CollaborationInfrastructure-1.1:
+- Added shared annotation protocol
+- Fixed several bugs
+
+CollaborationInfrastructure-1.2:
+- Implemented protocol clients and servers as plug-ins.
+- Changed Graphein client protocol plug-in to delete Graphein tool class
+  before client class is deleted.
+- Added option to uninstall collaboration infrastructure to makefile.
+- Bumped required Vrui version to 1.0-066.
+- Removed Emineo protocol from package, since it will be provided by the
+  Emineo package itself.
+
+CollaborationInfrastructure-1.3:
+- Changed initialization of collaboration client and server objects to
+  accept a Configuration object, with methods to change important
+  settings.
+
+CollaborationInfrastructure-1.4:
+- Fixed multi-party communication protocol in Agora plug-in.
+- Cleaned up status and warning messages from all components.
+- Applied buffer size configuration options to PCM hardware devices for
+  improved underrun / overrun recovery.
+- Added collaboration client vislet to integrate collaboration
+  facilities into otherwise unaware Vrui applications.
+
+CollaborationInfrastructure-1.5:
+- Bumped Vrui version requirement to Vrui-2.1-001.
+
+CollaborationInfrastructure-2.0:
+- Bumped Vrui version requirement to Vrui-2.2-001.
+- Added Cheria protocol plug-in to share input devices and pointing
+  tools.
+- Removed input device sharing from base collaboration protocol.
+- Entirely rebased to new IO::File abstraction infrastructure.
+- Changed build system to follow Vrui's new modular build system.
+
+CollaborationInfrastructure-2.1:
+- Bumped Vrui version requirement to Vrui-2.2-003.
+- Fixed handling of client following / facing in collaboration client.
+- Improved Agora module:
+  - Reduced bandwidth by not streaming redundant data.
+  - Allowed "default" video device in configuration section.
+
+CollaborationInfrastructure-2.2:
+- Bumped Vrui version requirement to Vrui-2.4-001.
+
+CollaborationInfrastructure-2.3:
+- Bumped Vrui version requirement to Vrui-2.5-001.
+- Fixed several cluster-related issues in base collaboration protocol
+  and protocol plug-ins.
+- Made minor changes to build system in line with Vrui.
+
+CollaborationInfrastructure-2.4:
+- Bumped Vrui version requirement to Vrui-2.6-001.
+- Adapted collaboration client vislet to new vislet initialization
+  procedure.
+
+CollaborationInfrastructure-2.5:
+- Fixed installation path for make configuration file if INSTALLPREFIX
+  is specified. Pointed out by Braden Pellett.
+- Bumped Vrui version requirement to Vrui-2.7-001.
+
+CollaborationInfrastructure-2.6:
+- Bumped Vrui version requirement to Vrui-3.0-001.
+- Replaced all Geometry::cross with operator^.
+- Updated Cheria protocol:
+  - Added ray start parameter to sharing state.
+  - Added linear and angular device velocities to sharing state.
+  - Updated protocol version to 3.0.
+
+CollaborationInfrastructure-2.7:
+- Bumped Vrui version requirement to Vrui-3.1-002.
+- Fixed dependency of install: makefile target.
+- Fixed missing #include <Threads/Thread.h> in AgoraClient.h. Reported
+  by William Sherman.
+
+CollaborationInfrastructure-2.8:
+- Bumped Vrui version requirement to Vrui-4.4-001.
+
+CollaborationInfrastructure-2.9:
+- Bumped Vrui version requirement to Vrui-5.0-001.
+
+CollaborationInfrastructure-3.0:
+- Bumped Vrui version requirement to Vrui-5.1-003.
+- First preliminary release of second-generation collaboration
+  infrastructure.
+
+CollaborationInfrastructure-4.0:
+- Bumped Vrui version requirement to Vrui-6.0-001 for new build system.
+- First official release of second-generation collaboration
+  infrastructure.

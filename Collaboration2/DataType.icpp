@@ -1,0 +1,773 @@
+/***********************************************************************
+DataType - Class to define data types and data objects for automatic
+transmission over binary pipes.
+Copyright (c) 2019-2020 Oliver Kreylos
+***********************************************************************/
+
+#ifndef DATATYPE_IMPLEMENTATION
+#define DATATYPE_IMPLEMENTATION
+
+#include <Collaboration2/DataType.h>
+
+#include <string>
+#include <stdexcept>
+#include <Misc/Vector.h>
+#include <Misc/VarIntMarshaller.h>
+
+/*************************
+Methods of class DataType:
+*************************/
+
+template <class TypeParam>
+inline
+DataType::TypeID
+DataType::getAtomicType(
+	void)
+	{
+	throw std::runtime_error("DataType::getAtomicType: Unknown data type");
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<bool>(
+	void)
+	{
+	return Bool;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<char>(
+	void)
+	{
+	return Char;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::SInt8>(
+	void)
+	{
+	return SInt8;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::SInt16>(
+	void)
+	{
+	return SInt16;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::SInt32>(
+	void)
+	{
+	return SInt32;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::SInt64>(
+	void)
+	{
+	return SInt64;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::UInt8>(
+	void)
+	{
+	return UInt8;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::UInt16>(
+	void)
+	{
+	return UInt16;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::UInt32>(
+	void)
+	{
+	return UInt32;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::UInt64>(
+	void)
+	{
+	return UInt64;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::Float32>(
+	void)
+	{
+	return Float32;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<Misc::Float64>(
+	void)
+	{
+	return Float64;
+	}
+
+template <>
+inline
+DataType::TypeID
+DataType::getAtomicType<std::string>(
+	void)
+	{
+	return String;
+	}
+
+template <class SourceParam>
+inline
+void
+DataType::read(
+	SourceParam& source)
+	{
+	/* Save the current compound data type definitions: */
+	std::vector<CompoundType> oldCompoundTypes;
+	std::swap(compoundTypes,oldCompoundTypes);
+	
+	try
+		{
+		/* Read the number of defined compound types: */
+		size_t numCompoundTypes=source.template read<Misc::UInt8>();
+		
+		/* Read all compound type definitions: */
+		compoundTypes.reserve(numCompoundTypes);
+		for(size_t i=0;i<numCompoundTypes;++i)
+			{
+			/* Read the compound type type: */
+			CompoundType::Type compoundType=CompoundType::Type(source.template read<TypeID>());
+			
+			/* Add another compound type: */
+			compoundTypes.push_back(CompoundType());
+			CompoundType& ct=compoundTypes.back();
+			ct.type=compoundType;
+			
+			/* Read the compound type definition: */
+			switch(ct.type)
+				{
+				case CompoundType::Pointer:
+					
+					/* Read the element type: */
+					ct.pointer.elementType=source.template read<TypeID>();
+					
+					/* Pointers never have fixed sizes: */
+					ct.fixedSize=false;
+					
+					/* Calculate the pointer's sizes: */
+					ct.minSize=sizeof(WireBool);
+					ct.alignment=sizeof(void*);
+					ct.memSize=sizeof(void*);
+					
+					break;
+					
+				case CompoundType::FixedArray:
+					{
+					/* Read the number of array elements: */
+					ct.fixedArray.numElements=size_t(source.template read<Misc::UInt16>())+1U;
+					
+					/* Read the element type: */
+					ct.fixedArray.elementType=source.template read<TypeID>();
+					if(ct.fixedArray.elementType>=NumAtomicTypes+i)
+						throw std::runtime_error("DataType::read: Undefined array element type");
+					
+					/* Determine if the array has fixed size: */
+					ct.fixedSize=hasFixedSize(ct.fixedArray.elementType);
+					
+					/* Check for potential overflow in the fixed array's memory size: */
+					size_t elementSize=getMemSize(ct.fixedArray.elementType);
+					if(ct.fixedArray.numElements>size_t(-1)/elementSize)
+						throw std::runtime_error("DataType::read: Memory size overflow in fixed array");
+					
+					/* Calculate the fixed array's sizes: */
+					ct.minSize=ct.fixedArray.numElements*getMinSize(ct.fixedArray.elementType);
+					ct.alignment=getAlignment(ct.fixedArray.elementType);
+					ct.memSize=ct.fixedArray.numElements*elementSize;
+					
+					break;
+					}
+				
+				case CompoundType::Vector:
+					{
+					/* Read the element type: */
+					ct.vector.elementType=source.template read<TypeID>();
+					if(ct.vector.elementType>=NumAtomicTypes+i)
+						throw std::runtime_error("DataType::read: Undefined vector element type");
+					
+					/* Vectors never have fixed sizes: */
+					ct.fixedSize=false;
+					
+					/* Calculate the vector's sizes: */
+					ct.minSize=atomicTypeMinSizes[VarInt];
+					ct.alignment=sizeof(void*);
+					ct.memSize=sizeof(Misc::VectorBase);
+					
+					break;
+					}
+				
+				case CompoundType::Structure:
+					{
+					/* Initialize the structure in case of errors: */
+					ct.structure.numElements=0;
+					ct.structure.elements=0;
+					
+					/* Determine whether the structure has a fixed size: */
+					ct.fixedSize=true;
+					
+					/* Initialize the structure's sizes: */
+					ct.minSize=0;
+					ct.alignment=1;
+					ct.memSize=0;
+					
+					/* Read the number of structure elements: */
+					ct.structure.numElements=size_t(source.template read<Misc::UInt8>())+1U;
+					
+					/* Read the structure element types: */
+					ct.structure.elements=new StructureElement[ct.structure.numElements];
+					StructureElement* seEnd=ct.structure.elements+ct.structure.numElements;
+					for(StructureElement* sePtr=ct.structure.elements;sePtr!=seEnd;++sePtr)
+						{
+						/* Read and check the type of the next element: */
+						sePtr->type=source.template read<TypeID>();
+						if(sePtr->type>=NumAtomicTypes+i)
+							throw std::runtime_error("DataType::read: Undefined structure element type");
+						
+						/* Update the structure's fixed size flag: */
+						ct.fixedSize=ct.fixedSize&&hasFixedSize(sePtr->type);
+						
+						/* Update the structure's minimum size: */
+						ct.minSize+=getMinSize(sePtr->type);
+						
+						/* Update the structure's alignment: */
+						size_t elementAlignment=getAlignment(sePtr->type);
+						if(ct.alignment<elementAlignment)
+							ct.alignment=elementAlignment;
+						
+						/* Align the next element while checking for memory size overflow: */
+						{
+						size_t newMemSize=ct.memSize+(elementAlignment-ct.memSize)%elementAlignment;
+						if(newMemSize<ct.memSize)
+							throw std::runtime_error("DataType::read: Memory size overflow in structure");
+						ct.memSize=newMemSize;
+						}
+						
+						/* Position the next element: */
+						sePtr->memOffset=ct.memSize;
+						
+						/* Update the structure's memory size while checking for overflow: */
+						{
+						size_t newMemSize=ct.memSize+getMemSize(sePtr->type);
+						if(newMemSize<ct.memSize)
+							throw std::runtime_error("DataType::read: Memory size overflow in structure");
+						ct.memSize=newMemSize;
+						}
+						}
+					
+					/* Pad the memory size of the structure to its own alignment while checking for overflow: */
+					{
+					size_t newMemSize=ct.memSize+(ct.alignment-ct.memSize)%ct.alignment;
+					if(newMemSize<ct.memSize)
+						throw std::runtime_error("DataType::read: Memory size overflow in structure");
+					ct.memSize=newMemSize;
+					}
+					
+					break;
+					}
+				
+				default:
+					throw std::runtime_error("DataType::read: Invalid compound type type");
+				}
+			}
+		
+		/* Check if all pointer types have valid element types: */
+		TypeID typeId=NumAtomicTypes;
+		for(std::vector<CompoundType>::iterator ctIt=compoundTypes.begin();ctIt!=compoundTypes.end();++ctIt,++typeId)
+			if(ctIt->type==CompoundType::Pointer)
+				if(ctIt->type==typeId||ctIt->type>=NumAtomicTypes+compoundTypes.size())
+					throw std::runtime_error("DataType::read: Invalid pointer element type");
+		}
+	catch(const std::runtime_error& err)
+		{
+		/* Release all allocated resources: */
+		for(std::vector<CompoundType>::iterator ctIt=compoundTypes.begin();ctIt!=compoundTypes.end();++ctIt)
+			if(ctIt->type==CompoundType::Structure)
+				delete[] ctIt->structure.elements;
+		
+		/* Restore the old compound type vector: */
+		std::swap(oldCompoundTypes,compoundTypes);
+		
+		/* Re-throw the exception: */
+		throw;
+		}
+
+	/* Release the old compound type vector's resources: */
+	for(std::vector<CompoundType>::iterator ctIt=oldCompoundTypes.begin();ctIt!=oldCompoundTypes.end();++ctIt)
+		if(ctIt->type==CompoundType::Structure)
+			delete[] ctIt->structure.elements;
+	}
+
+template <class SinkParam>
+inline
+void
+DataType::write(
+	SinkParam& sink) const
+	{
+	/* Write the number of defined compound types: */
+	sink.template write(Misc::UInt8(compoundTypes.size()));
+	
+	/* Write all compound type definitions: */
+	for(std::vector<CompoundType>::const_iterator ctIt=compoundTypes.begin();ctIt!=compoundTypes.end();++ctIt)
+		{
+		/* Write the compound type type: */
+		sink.template write(TypeID(ctIt->type));
+		switch(ctIt->type)
+			{
+			case CompoundType::Pointer:
+				
+				/* Write the pointer element type: */
+				sink.template write(ctIt->pointer.elementType);
+				
+				break;
+			
+			case CompoundType::FixedArray:
+				/* Write the number of array elements: */
+				sink.template write(Misc::UInt16(ctIt->fixedArray.numElements-1U));
+				
+				/* Write the array element type: */
+				sink.template write(ctIt->fixedArray.elementType);
+				
+				break;
+			
+			case CompoundType::Vector:
+				/* Write the array element type: */
+				sink.template write(ctIt->vector.elementType);
+				
+				break;
+			
+			case CompoundType::Structure:
+				/* Write the number of structure elements: */
+				sink.template write(Misc::UInt8(ctIt->structure.numElements-1U));
+				
+				/* Write all structure element types: */
+				for(size_t j=0;j<ctIt->structure.numElements;++j)
+					sink.template write(ctIt->structure.elements[j].type);
+				
+				break;
+			
+			default:
+				/* Can't happen; just to make compiler happy: */
+				;
+			}
+		}
+	}
+
+template <class SourceParam>
+inline
+size_t
+DataType::read(
+	SourceParam& source,
+	typename DataType::TypeID type,
+	void* object) const
+	{
+	size_t result=0;
+	
+	/* Check if the type is atomic: */
+	if(type<NumAtomicTypes)
+		{
+		/* Read the object's value: */
+		result=atomicTypeMinSizes[type];
+		switch(type)
+			{
+			case Bool:
+				*static_cast<bool*>(object)=source.template read<WireBool>()!=WireBool(0);
+				break;
+			
+			case Char:
+				*static_cast<char*>(object)=char(source.template read<WireChar>());
+				break;
+			
+			case SInt8:
+				source.template read(*static_cast<Misc::SInt8*>(object));
+				break;
+			
+			case SInt16:
+				source.template read(*static_cast<Misc::SInt16*>(object));
+				break;
+			
+			case SInt32:
+				source.template read(*static_cast<Misc::SInt32*>(object));
+				break;
+			
+			case SInt64:
+				source.template read(*static_cast<Misc::SInt64*>(object));
+				break;
+			
+			case UInt8:
+				source.template read(*static_cast<Misc::UInt8*>(object));
+				break;
+			
+			case UInt16:
+				source.template read(*static_cast<Misc::UInt16*>(object));
+				break;
+			
+			case UInt32:
+				source.template read(*static_cast<Misc::UInt32*>(object));
+				break;
+			
+			case UInt64:
+				source.template read(*static_cast<Misc::UInt64*>(object));
+				break;
+			
+			case Float32:
+				source.template read(*static_cast<Misc::Float32*>(object));
+				break;
+			
+			case Float64:
+				source.template read(*static_cast<Misc::Float64*>(object));
+				break;
+			
+			case VarInt:
+				result=Misc::readVarInt32(source,*static_cast<Misc::UInt32*>(object));
+				break;
+			
+			case String:
+				{
+				/* Read the string's length as a VarInt: */
+				Misc::UInt32 strLen;
+				result=Misc::readVarInt32(source,strLen);
+				
+				/* Read the string's characters: */
+				std::string& string=*static_cast<std::string*>(object);
+				string.clear();
+				string.reserve(strLen);
+				for(;strLen>0;--strLen)
+					string.push_back(char(source.template read<WireChar>()));
+				result+=strLen*sizeof(WireChar);
+				
+				break;
+				}
+			
+			default:
+				/* Can't happen; just to make compiler happy: */
+				;
+			}
+		}
+	else
+		{
+		/* Access the compound type: */
+		const CompoundType& ct=compoundTypes[type-NumAtomicTypes];
+		switch(ct.type)
+			{
+			case CompoundType::Pointer:
+				{
+				/* Access the pointed-to object: */
+				void* target=*static_cast<void**>(object);
+				
+				/* Check if the pointer points to an object: */
+				result=sizeof(WireBool);
+				if(source.template read<WireBool>()!=WireBool(0))
+					{
+					/* Check if the target object needs to be created: */
+					if(target==0)
+						*static_cast<void**>(object)=target=createObject(ct.pointer.elementType);
+					
+					/* Read into the target object: */
+					result+=read(source,ct.pointer.elementType,target);
+					}
+				else if(target!=0)
+					{
+					/* Destroy the target object: */
+					destroyObject(ct.pointer.elementType,target);
+					*static_cast<void**>(object)=0;
+					}
+				
+				break;
+				}
+			
+			case CompoundType::FixedArray:
+				{
+				/* Read all array elements: */
+				result=0;
+				size_t elementSize=getMemSize(ct.fixedArray.elementType);
+				char* elementEnd=static_cast<char*>(object)+ct.fixedArray.numElements*elementSize;
+				for(char* elementPtr=static_cast<char*>(object);elementPtr!=elementEnd;elementPtr+=elementSize)
+					result+=read(source,ct.fixedArray.elementType,elementPtr);
+				
+				break;
+				}
+			
+			case CompoundType::Vector:
+				{
+				/* Read the number of vector elements as a VarInt: */
+				Misc::UInt32 vecLen;
+				result=Misc::readVarInt32(source,vecLen);
+				
+				/* Read the vector's elements: */
+				Misc::VectorBase& vec=*static_cast<Misc::VectorBase*>(object);
+				size_t elementSize=getMemSize(ct.vector.elementType);
+				
+				if(vecLen<=vec.capacity())
+					{
+					/* Read elements already in the vector: */
+					char* elementPtr=static_cast<char*>(vec.getElements());
+					char* elementEnd=elementPtr+vecLen*elementSize;
+					char* existingElementEnd=elementPtr+(vec.size()<vecLen?vec.size():vecLen)*elementSize;
+					for(;elementPtr!=existingElementEnd;elementPtr+=elementSize)
+						result+=read(source,ct.vector.elementType,elementPtr);
+					
+					if(vec.size()<vecLen)
+						{
+						/* Create and read elements not yet in the vector: */
+						for(;elementPtr!=elementEnd;elementPtr+=elementSize)
+							{
+							initObject(ct.vector.elementType,elementPtr);
+							result+=read(source,ct.vector.elementType,elementPtr);
+							}
+						}
+					
+					if(vec.size()>vecLen)
+						{
+						/* Destroy remaining elements in the vector: */
+						for(;elementPtr!=elementEnd;elementPtr+=elementSize)
+							deinitObject(ct.vector.elementType,elementPtr);
+						}
+					}
+				else
+					{
+					/* Destroy the current vector elements: */
+					char* elementEnd=static_cast<char*>(vec.getElements())+vec.size()*elementSize;
+					for(char* elementPtr=static_cast<char*>(vec.getElements());elementPtr!=elementEnd;elementPtr+=elementSize)
+						deinitObject(ct.vector.elementType,elementPtr);
+					
+					/* Allocate new vector elements: */
+					vec.reallocate(vecLen,elementSize);
+					
+					/* Create and read the vector elements: */
+					elementEnd=static_cast<char*>(vec.getElements())+vecLen*elementSize;
+					for(char* elementPtr=static_cast<char*>(vec.getElements());elementPtr!=elementEnd;elementPtr+=elementSize)
+						{
+						initObject(ct.vector.elementType,elementPtr);
+						result+=read(source,ct.vector.elementType,elementPtr);
+						}
+					}
+				vec.setSize(vecLen);
+				
+				break;
+				}
+			
+			case CompoundType::Structure:
+				{
+				/* Read all structure elements: */
+				result=0;
+				char* elementPtr=static_cast<char*>(object);
+				const StructureElement* seEnd=ct.structure.elements+ct.structure.numElements;
+				for(const StructureElement* sePtr=ct.structure.elements;sePtr!=seEnd;++sePtr)
+					result+=read(source,sePtr->type,elementPtr+sePtr->memOffset);
+				
+				break;
+				}
+			
+			default:
+				/* Can't happen, just to make compiler happy: */
+				;
+			}
+		}
+	
+	return result;
+	}
+
+template <class SinkParam>
+inline
+size_t
+DataType::write(
+	typename DataType::TypeID type,
+	const void* object,
+	SinkParam& sink) const
+	{
+	size_t result=0;
+	
+	/* Check if the type is atomic: */
+	if(type<NumAtomicTypes)
+		{
+		/* Write the object's value: */
+		result=atomicTypeMinSizes[type];
+		switch(type)
+			{
+			case Bool:
+				sink.template write(WireBool(*static_cast<const bool*>(object)?1:0));
+				break;
+			
+			case Char:
+				sink.template write(WireChar(*static_cast<const char*>(object)));
+				break;
+			
+			case SInt8:
+				sink.template write(*static_cast<const Misc::SInt8*>(object));
+				break;
+			
+			case SInt16:
+				sink.template write(*static_cast<const Misc::SInt16*>(object));
+				break;
+			
+			case SInt32:
+				sink.template write(*static_cast<const Misc::SInt32*>(object));
+				break;
+			
+			case SInt64:
+				sink.template write(*static_cast<const Misc::SInt64*>(object));
+				break;
+			
+			case UInt8:
+				sink.template write(*static_cast<const Misc::UInt8*>(object));
+				break;
+			
+			case UInt16:
+				sink.template write(*static_cast<const Misc::UInt16*>(object));
+				break;
+			
+			case UInt32:
+				sink.template write(*static_cast<const Misc::UInt32*>(object));
+				break;
+			
+			case UInt64:
+				sink.template write(*static_cast<const Misc::UInt64*>(object));
+				break;
+			
+			case Float32:
+				sink.template write(*static_cast<const Misc::Float32*>(object));
+				break;
+			
+			case Float64:
+				sink.template write(*static_cast<const Misc::Float64*>(object));
+				break;
+			
+			case VarInt:
+				result=Misc::writeVarInt32(*static_cast<const Misc::UInt32*>(object),sink);
+				break;
+			
+			case String:
+				{
+				/* Write the string's length as a VarInt: */
+				const std::string& string=*static_cast<const std::string*>(object);
+				Misc::UInt32 strLen(string.length());
+				result=Misc::writeVarInt32(strLen,sink);
+				
+				/* Write the string's characters: */
+				for(typename std::string::const_iterator sIt=string.begin();sIt!=string.end();++sIt)
+					sink.template write(WireChar(*sIt));
+				result+=strLen*sizeof(WireChar);
+				
+				break;
+				}
+			
+			default:
+				/* Can't happen; just to make compiler happy: */
+				;
+			}
+		}
+	else
+		{
+		/* Access the compound type: */
+		const CompoundType& ct=compoundTypes[type-NumAtomicTypes];
+		switch(ct.type)
+			{
+			case CompoundType::Pointer:
+				{
+				/* Check if the pointer is valid: */
+				const void* target=*static_cast<const void* const*>(object);
+				result=sizeof(WireBool);
+				if(target!=0)
+					{
+					/* Write a valid marker: */
+					sink.template write(WireBool(1));
+					
+					/* Write the target object: */
+					result+=write(ct.pointer.elementType,target,sink);
+					}
+				else
+					{
+					/* Write an invalid marker: */
+					sink.template write(WireBool(0));
+					}
+				
+				break;
+				}
+			
+			case CompoundType::FixedArray:
+				{
+				/* Write all array elements: */
+				result=0;
+				size_t elementSize=getMemSize(ct.fixedArray.elementType);
+				const char* elementEnd=static_cast<const char*>(object)+ct.fixedArray.numElements*elementSize;
+				for(const char* elementPtr=static_cast<const char*>(object);elementPtr!=elementEnd;elementPtr+=elementSize)
+					result+=write(ct.fixedArray.elementType,elementPtr,sink);
+				
+				break;
+				}
+			
+			case CompoundType::Vector:
+				{
+				/* Write the number of vector elements as a VarInt: */
+				const Misc::VectorBase& vec=*static_cast<const Misc::VectorBase*>(object);
+				Misc::UInt32 vecLen(vec.size());
+				result=Misc::writeVarInt32(vecLen,sink);
+				
+				/* Write all vector elements: */
+				size_t elementSize=getMemSize(ct.vector.elementType);
+				const char* elementEnd=static_cast<const char*>(vec.getElements())+vecLen*elementSize;
+				for(const char* elementPtr=static_cast<const char*>(vec.getElements());elementPtr!=elementEnd;elementPtr+=elementSize)
+					result+=write(ct.vector.elementType,elementPtr,sink);
+				
+				break;
+				}
+			
+			case CompoundType::Structure:
+				{
+				/* Write all structure elements: */
+				result=0;
+				const char* elementPtr=static_cast<const char*>(object);
+				const StructureElement* seEnd=ct.structure.elements+ct.structure.numElements;
+				for(const StructureElement* sePtr=ct.structure.elements;sePtr!=seEnd;++sePtr)
+					result+=write(sePtr->type,elementPtr+sePtr->memOffset,sink);
+				
+				break;
+				}
+			
+			default:
+				/* Can't happen, just to make compiler happy: */
+				;
+			}
+		}
+	
+	return result;
+	}
+
+#endif
