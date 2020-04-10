@@ -20,11 +20,11 @@ or by integrating derived versions of the basic collaboration framework
 into applications.
 
 The Collaboration Infrastructure is an extension of the Vrui software
-development toolkit (see http://idav.ucdavis.edu/~okreylos/ResDev/Vrui),
-and runs in a variety of environments ranging from laptop or desktop
-computers over semi- immersive environments such as Geowalls to fully
-immersive virtual reality environments such as CAVEs or head-mounted VR
-displays.
+development toolkit (see
+http://www.idav.ucdavis.edu/~okreylos/ResDev/Vrui), and runs in a
+variety of environments ranging from laptop or desktop computers over
+semi-immersive environments such as Geowalls to fully immersive virtual
+reality environments such as CAVEs or head-mounted VR displays.
 
 The Collaboration Infrastructure's development was supported by the
 University of California, Davis, by the UC Davis W.M. Keck Center for
